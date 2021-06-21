@@ -1,0 +1,199 @@
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        background: white;
+        margin: 2rem;
+    }
+
+    .level-grid {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .level-grid .row {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .level-grid .cell {
+        --border: solid 1px hsl(0, 0%, 70%);
+        width: 24px;
+        height: 24px;
+        border: var(--border);
+        border-right: none;
+        border-bottom: none;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 20px;
+    }
+
+    .level-grid .cell:last-child {
+        border-right: var(--border);
+    }
+
+    .level-grid .row:last-child .cell {
+        border-bottom: var(--border);
+    }
+
+    .level-grid .cell.wall {
+        background: hsl(120, 20%, 30%);
+    }
+
+    .level-grid .cell.floor {
+        background: hsl(60, 30%, 95%);
+    }
+
+    .level-grid .cell.target {
+        background: hsl(300, 30%, 80%);
+    }
+</style>
+
+<div class="level-grid"></div>
+
+<script>
+    function clearChildren(e) {
+        while (e.firstChild) e.removeChild(e.lastChild);
+    }
+
+    function draw(level) {
+        const grid = document.querySelector('.level-grid');
+        for (const [y, row] of level.characters.entries()) {
+            for (const [x, character] of row.entries()) {
+                grid.children[y].children[x].textContent = character == 'player' ? '🙄' : character == 'box' ? '📦' : '';
+            }
+        }
+    }
+
+    function initializeGrid(level) {
+        const grid = document.querySelector('.level-grid');
+        clearChildren(grid);
+        for (const row of level.map) {
+            const rowNode = document.createElement('div');
+            rowNode.classList.add('row')
+            for (const cell of row) {
+                const cellNode = document.createElement('div');
+                cellNode.classList.add('cell');
+                cellNode.classList.add(cell);
+                rowNode.appendChild(cellNode);
+            }
+            grid.appendChild(rowNode);
+        }
+        draw(level);
+    }
+
+    function playerPosition(level) {
+        for (const [y, row] of level.characters.entries()) {
+            for (const [x, character] of row.entries()) {
+                if (character == 'player') return {x, y};
+            }
+        }
+        return null;
+    }
+
+    function isMovableTo(level, position) {
+        return position.y >= 0 && position.y < level.map.length && position.x >= 0 && position.x < level.map[position.y].length
+            && level.map[position.y][position.x] != 'wall';
+    }
+
+    function move(level, amount) {
+        const current = playerPosition(level);
+        const moved = {x: current.x + amount.x, y: current.y + amount.y};
+        if (!isMovableTo(level, moved)) return 'not-moved';
+        const result = level.characters[moved.y][moved.x] == 'box' ? 'push' : 'move';
+        if (level.characters[moved.y][moved.x] == 'box') {
+            const boxMoved = {x: moved.x + amount.x, y: moved.y + amount.y};
+            if (!isMovableTo(level, boxMoved)) return 'not-moved';
+            if (level.characters[boxMoved.y][boxMoved.x] == 'box') return 'not-moved';
+            level.characters[moved.y][moved.x] = '';
+            level.characters[boxMoved.y][boxMoved.x] = 'box';
+        }
+        level.characters[current.y][current.x] = '';
+        level.characters[moved.y][moved.x] = 'player';
+        draw(level);
+        return result;
+    }
+
+    function serialize(level) {
+        return JSON.stringify(level);
+    }
+
+    function deserialize(state) {
+        return JSON.parse(state);
+    }
+
+    window.addEventListener('load', () => {
+        const W = 'wall';
+        const F = 'floor';
+        const T = 'target';
+        const N = null;
+        const P = 'player';
+        const B = 'box';
+        let level = {
+            map: [
+                [W, W, W, W, W, W, W, W, W],
+                [W, F, F, F, W, F, F, F, W],
+                [W, F, F, F, T, F, F, F, W],
+                [W, T, T, T, F, T, T, T, W],
+                [W, F, F, F, T, F, F, F, W],
+                [W, F, F, W, W, W, F, F, W],
+                [W, W, W, W, W, W, W, W, W]
+            ],
+            characters: [
+                [N, N, N, N, N, N, N, N, N],
+                [N, N, N, N, N, N, P, N, N],
+                [N, N, B, B, B, B, B, N, N],
+                [N, N, N, N, N, N, N, N, N],
+                [N, B, N, N, B, N, N, B, N],
+                [N, N, N, N, N, N, N, N, N],
+                [N, N, N, N, N, N, N, N, N]
+            ]
+        };
+        initializeGrid(level);
+        let histories = {
+            state: serialize(level),
+            prev: null,
+            next: null
+        }
+        const saveAndMove = (amount) => {
+            if (move(level, amount) != 'push') return;
+            const current = {
+                state: serialize(level),
+                prev: histories,
+                next: null
+            };
+            histories.next = current;
+            histories = current;
+        };
+        const restore = (state) => {
+            level = deserialize(state);
+            draw(level);
+        }
+        document.addEventListener('keydown', (event) => {
+            switch (event.code) {
+            case 'ArrowUp':
+                return saveAndMove({x: 0, y: -1});
+            case 'ArrowDown':
+                return saveAndMove({x: 0, y: 1});
+            case 'ArrowLeft':
+                return saveAndMove({x: -1, y: 0});
+            case 'ArrowRight':
+                return saveAndMove({x: 1, y: 0});
+            case 'KeyZ':
+                if (!histories.prev) return;
+                histories = histories.prev;
+                restore(histories.state);
+                return;
+            case 'KeyX':
+                if (!histories.next) return;
+                histories = histories.next;
+                restore(histories.state);
+            }
+        })
+    });
+</script>
